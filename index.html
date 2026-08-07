@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Greeting Card Studio</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f4f7f6; color: #333; }
+        h1 { text-align: center; color: #2c3e50; }
+        .studio-container { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px; }
+        @media(max-width: 768px) { .studio-container { grid-template-columns: 1fr; } }
+        .control-panel { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .preview-panel { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        canvas { max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 10px 20px rgba(0,0,0,0.15); background: #ddd; }
+        label { display: block; margin: 12px 0 6px; font-weight: 600; font-size: 14px; }
+        input, textarea, select { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 10px; font-size: 14px; }
+        button { width: 100%; padding: 12px; background: #3498db; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 10px; }
+        button:hover { background: #2980b9; }
+        .btn-success { background: #2ecc71; }
+        .btn-success:hover { background: #27ae60; }
+        .btn-secondary { background: #e67e22; }
+        .btn-secondary:hover { background: #d35400; }
+        .loading { text-align: center; color: #7f8c8d; font-style: italic; margin: 10px 0; display: none; }
+    </style>
+</head>
+<body>
+
+    <h1>🎨 AI Greeting Card Studio</h1>
+
+    <div class="studio-container">
+        <!-- LEFT: Control Controls -->
+        <div class="control-panel">
+            <h3>1. Generate Card Image</h3>
+            <label for="prompt">Describe your ideal card art:</label>
+            <textarea id="prompt" rows="2" placeholder="e.g., A cozy cabin in winter surrounded by magical glowing holiday lights, watercolor style"></textarea>
+            <button onclick="generateCard()">✨ Generate AI Art</button>
+            <div id="loadingText" class="loading">Generating magical artwork... Please wait (approx 5s)</div>
+
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+            <h3>2. Customize Text</h3>
+            <label for="cardText">Greeting Message:</label>
+            <input type="text" id="cardText" value="Happy Holidays!" oninput="drawCanvas()" placeholder="Type something...">
+            
+            <label for="textColor">Text Color:</label>
+            <input type="color" id="textColor" value="#ffffff" onchange="drawCanvas()">
+
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+            <h3>3. Download or Send</h3>
+            <button class="btn-secondary" onclick="downloadCard()">💾 Download Locally</button>
+            
+            <label for="email">Recipient Email:</label>
+            <input type="email" id="email" placeholder="friend@example.com">
+            <label for="senderName">Your Name:</label>
+            <input type="text" id="senderName" placeholder="Your Name">
+            <button class="btn-success" onclick="sendCardEmail()">✉️ Send to Email</button>
+        </div>
+
+        <!-- RIGHT: Live Canvas Preview -->
+        <div class="preview-panel">
+            <canvas id="cardCanvas" width="800" height="1200"></canvas>
+            <p style="color: #7f8c8d; font-size: 13px; margin-top: 10px;">Live High-Resolution Canvas Preview (800x1200)</p>
+        </div>
+    </div>
+
+    <script>
+        // Update this URL to your deployed Render URL (e.g., https://onrender.com)
+        const BACKEND_URL = 'http://localhost:5000'; 
+        
+        const canvas = document.getElementById('cardCanvas');
+        const ctx = canvas.getContext('2d');
+        let currentCardImage = new Image();
+        
+        // Initialize with a blank canvas and placeholder layout
+        window.onload = () => {
+            ctx.fillStyle = '#2c3e50';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 40px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Your AI Art Will Appear Here', canvas.width / 2, canvas.height / 2);
+        };
+
+        // 1. Call Backend API to generate the card image URL
+        async function generateCard() {
+            const prompt = document.getElementById('prompt').value;
+            if (!prompt) return alert('Please enter a description prompt!');
+
+            const loadingText = document.getElementById('loadingText');
+            loadingText.style.display = 'block';
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/cards/generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: prompt })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    // Set crossOrigin flag to prevent Canvas security errors (CORS) when handling downloads
+                    currentCardImage.crossOrigin = "anonymous";
+                    currentCardImage.src = data.card.imageUrl;
+                    
+                    currentCardImage.onload = () => {
+                        loadingText.style.display = 'none';
+                        drawCanvas(); // Render canvas once image fully downloads
+                    };
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                loadingText.style.display = 'none';
+                alert('Generation failed: ' + err.message);
+            }
+        }
+
+        // 2. Render image and user-customized text dynamically onto the canvas
+        function drawCanvas() {
+            if (!currentCardImage.src) return;
+
+            // Draw base AI generated image
+            ctx.drawImage(currentCardImage, 0, 0, canvas.width, canvas.height);
+
+            // Add an elegant dark tint at the bottom of the card to ensure text is readable
+            const gradient = ctx.createLinearGradient(0, canvas.height - 300, 0, canvas.height);
+            gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0.6)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, canvas.height - 300, canvas.width, 300);
+
+            // Configure text rules
+            const userText = document.getElementById('cardText').value;
+            const textColor = document.getElementById('textColor').value;
+            
+            ctx.fillStyle = textColor;
+            ctx.font = 'bold 55px Georgia, serif';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+            ctx.shadowBlur = 10;
+
+            // Render message 120 pixels above the absolute bottom border
+            ctx.fillText(userText, canvas.width / 2, canvas.height - 120);
+            ctx.shadowBlur = 0; // Reset shadow configurations
+        }
+
+        // 3. Trigger Browser download structure
+        function downloadCard() {
+            if (!currentCardImage.src) return alert('Generate a card first!');
+            
+            // Extract the snapshot from canvas as full quality JPEG data URI
+            const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
+            
+            const link = document.createElement('a');
+            link.download = 'ai-greeting-card.jpg';
+            link.href = dataUrl;
+            link.click();
+        }
+
+        // 4. Send Canvas State to Backend Email System
+        async function sendCardEmail() {
+            if (!currentCardImage.src) return alert('Generate a card first!');
+            
+            const recipientEmail = document.getElementById('email').value;
+            const senderName = document.getElementById('senderName').value;
+            const message = document.getElementById('cardText').value;
+
+            if (!recipientEmail) return alert('Please enter a recipient email address');
+
+            // Convert canvas image matrix directly into base64 data string string
+            const cardImageBase64 = canvas.toDataURL('image/jpeg', 0.9);
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/cards/send`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        recipientEmail,
+                        senderName,
+                        message,
+                        cardImageBase64
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    alert('🎉 Card successfully dispatched into your friend\'s inbox!');
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                alert('Failed to send email: ' + err.message);
+            }
+        }
+    </script>
+</body>
+</html>
