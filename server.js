@@ -7,16 +7,17 @@ import { Resend } from 'resend';
 dotenv.config();
 
 const app = express();
-
-// FORCE CORS TO ALLOW ACCESS FROM ANY SITE
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 
 const resend = new Resend(process.env.RESEND_API_KEY || 're_fake');
 
-mongoose.connect(process.env.MONGO_URI)
+// Connect to MongoDB with a 5-second timeout safety rule
+mongoose.connect(process.env.MONGO_URI, {
+  serverSelectionTimeoutMS: 5000 
+})
   .then(() => console.log('Connected to MongoDB Atlas'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .catch(err => console.error('MongoDB connection bypassed or errored:', err.message));
 
 const cardSchema = new mongoose.Schema({
   prompt: { type: String, required: true },
@@ -34,16 +35,26 @@ app.post('/api/cards/generate', async (req, res) => {
     
     const formattedPrompt = encodeURIComponent(prompt);
     const seed = Math.floor(Math.random() * 1000000);
-    
-    // Stable public Pollinations fallback endpoint format
     const aiImageUrl = `https://pollinations.ai{formattedPrompt}?seed=${seed}&width=800&height=1200&nologo=true`;
 
-    const newCard = new Card({ prompt, imageUrl: aiImageUrl, category: category || 'General' });
-    await newCard.save();
+    // SAFELY TRY TO SAVE, BUT DON'T CRASH IF DATABASE IS SLOW
+    try {
+      if (mongoose.connection.readyState === 1) {
+        const newCard = new Card({ prompt, imageUrl: aiImageUrl, category: category || 'General' });
+        await newCard.save();
+      }
+    } catch (dbError) {
+      console.log('Database save skipped:', dbError.message);
+    }
     
-    res.status(201).json({ message: 'Card generated successfully', card: newCard });
+    // ALWAYS RETURN VALID JSON TO THE FRONTEND NO MATTER WHAT
+    return res.status(201).json({ 
+      message: 'Card link created successfully', 
+      card: { imageUrl: aiImageUrl } 
+    });
+
   } catch (error) {
-    res.status(500).json({ error: 'Failed to generate card', details: error.message });
+    return res.status(500).json({ error: 'Failed to generate card', details: error.message });
   }
 });
 
@@ -60,9 +71,9 @@ app.post('/api/cards/send', async (req, res) => {
       html: `<p>${senderName || 'Someone'} sent you a card: </p><blockquote>"${message || ''}"</blockquote>`,
       attachments: [{ filename: 'greeting-card.jpg', content: base64Data }],
     });
-    res.status(200).json({ message: 'Email sent successfully!', data });
+    return res.status(200).json({ message: 'Email sent successfully!', data });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to send email', details: error.message });
+    return res.status(500).json({ error: 'Failed to send email', details: error.message });
   }
 });
 
